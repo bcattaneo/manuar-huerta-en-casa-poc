@@ -5,6 +5,10 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Literal, Union
 import os
 import logging
+__import__("pysqlite3")
+import sys
+
+sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
 import chromadb
 from chromadb import Settings
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
@@ -19,14 +23,17 @@ import requests
 import uvicorn
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 load_dotenv()
 
+# Configurar puerto para Azure
+port = int(os.getenv("PORT", 8000))
+
 # Get OpenAI API key from environment variables
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = "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"
 if not OPENAI_API_KEY:
     raise ValueError("OPENAI_API_KEY environment variable is not set")
 
@@ -82,19 +89,19 @@ def init_llm_retriever(db):
     )
     
     # Get the retriever from the ChromaDB
-    retriever = db.as_retriever(search_kwargs={"k": 2})
+    retriever = db.as_retriever(search_kwargs={"k": 3})
     
     return llm, retriever
 
-def init_llm_images():
-    # Initialize GPT model
-    llm = ChatOpenAI(
-        openai_api_key=OPENAI_API_KEY,
-        model="gpt-4o", # TODO: change all this to use gpt image or something else
-        temperature=0
-    )
+# def init_llm_images():
+#     # Initialize GPT model
+#     llm = ChatOpenAI(
+#         openai_api_key=OPENAI_API_KEY,
+#         model="gpt-4o", # TODO: change all this to use gpt image or something else
+#         temperature=0
+#     )
     
-    return llm
+#     return llm
 
 # Custom chat message history class
 class CustomChatMessageHistory(BaseChatMessageHistory):
@@ -116,7 +123,7 @@ class CustomChatMessageHistory(BaseChatMessageHistory):
 # Initialize database connection and models
 db = init_chroma_client()
 llm, retriever = init_llm_retriever(db)
-llm_images = init_llm_images()
+# llm_images = init_llm_images()
 
 @app.post("/class")
 async def get_class(request: Request):
@@ -236,10 +243,23 @@ async def query_documents(request: Request):
         if not last_message:
             raise HTTPException(status_code=400, detail="No user message found in the provided messages")
         
+        docs_and_scores = db.similarity_search_with_score(last_message, k=2)
+        print(docs_and_scores)
+
+        context = "\n".join(map(lambda doc: doc[0].page_content, docs_and_scores))
+
+        print(context)
+
+        # OpenAI API endpoint for chat completions
+        api_url = "https://api.openai.com/v1/chat/completions"
         
-        # Determine the prompt template based on whether a class is provided
-        # Prompt with class instruction
-        prompt = ChatPromptTemplate.from_template("""
+        # Prepare headers with API key
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {OPENAI_API_KEY}"
+        }
+        
+        prompt = f"""
         You are a helpful assistant that provides accurate information for kids and teens, based ONLY on the provided context. 
         If the answer cannot be found in the context, politely say so without making up information.
               
@@ -247,58 +267,59 @@ async def query_documents(request: Request):
                                                   
         Always respond in spanish.
 
-        This query is related to the class: {class_name}. 
+        Your information should be valid for plants, fruits or vegetables in Uruguay.
+
+        This query is related to the class: {doc_class}. 
         Focus your answer specifically on this topic area when relevant and when class is defined.
+
+        Never say stuff like 'Based on the provided information' or anything related to your context documents as an assistant.
         
         Context information is below:
         {context}
         
         Chat History:
-        {chat_history}
+        {chat_history.messages}
                                                   
         Given the context information and not prior knowledge, answer the query.
-        
-        Human: {input}
-        """)
+        """
 
-        # Create a chain to combine documents and query
-        question_answer_chain = create_stuff_documents_chain(
-            llm=llm,
-            prompt=prompt,
-            document_variable_name="context",
-        )
-        
-        # Create the retrieval chain
-        retrieval_chain = create_retrieval_chain(
-            retriever=retriever,
-            combine_docs_chain=question_answer_chain,
-        )
-        
-        # Invoke the retrieval chain
-        response = retrieval_chain.invoke({
-            "input": last_message,
-            "class_name": doc_class,
-            "chat_history": chat_history.messages
-        })
-        
-        # Extract sources for the answer
-        sources = []
-        for i, doc in enumerate(response["context"]):
-            sources.append({
-                "source": doc.metadata.get("source", "Unknown"),
-                "page": doc.metadata.get("page", "Unknown"),
-                "excerpt": doc.page_content[:150] + "..." if len(doc.page_content) > 150 else doc.page_content
-            })
-        
-        return {
-            "answer": response["answer"],
-            "sources": sources
+        payload = {
+            "model": "gpt-4o",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                    ]
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": last_message},
+                    ]
+                }
+            ],
         }
+        
+        # Send the request to OpenAI API
+        response = requests.post(api_url, headers=headers, json=payload)
+        
+        # Check if the request was successful
+        if response.status_code == 200:
+            result = response.json()
+            analysis_text = result["choices"][0]["message"]["content"]
+            return {"answer": analysis_text} # TODO: add sources
+        else:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Error from OpenAI API: {response.text}"
+            )
     
     except Exception as e:
         logger.error(f"Error processing query: {str(e)}")
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
 if __name__ == "__main__":
-    # Run the FastAPI app with uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8090)
+    # Ejecutar la aplicación con uvicorn
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=port)

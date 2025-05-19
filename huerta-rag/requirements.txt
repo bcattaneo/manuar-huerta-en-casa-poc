@@ -6,3 +6,5 @@ langchain_openai>=0.0.3
 langchain_chroma>=0.0.1
 chromadb==1.0.9
 requests
+gunicorn>=20.1.0
+pysqlite3-binary

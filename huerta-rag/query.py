@@ -23,7 +23,7 @@ import requests
 import uvicorn
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
@@ -36,6 +36,8 @@ port = int(os.getenv("PORT", 8000))
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise ValueError("OPENAI_API_KEY environment variable is not set")
+
+print(OPENAI_API_KEY)
 
 # Configure FastAPI app
 app = FastAPI(title="RAG Query API", 
@@ -146,7 +148,33 @@ async def get_class(request: Request):
 
         Responde con el nombre de la clase identificada.
 
+        Sólo sabes identificar las siguientes clases:
+        - Ají amarillo
+        - Albahaca genovesa
+        - Albahaca limón
+        - Albahaca morada
+        - Ciboulette
+        - Morrón común
+        - Orégano
+        - Pepino
+        - Pimiento de Padrón
+        - Pimiento jalapeño
+        - Pimiento panka
+        - Pimiento shishito
+        - Tomate amarillo
+        - Tomate azul
+        - Tomate cherry
+        - Tomate cherry amarillo
+        - Tomate cherry azul
+        - Tomate corazón de buey
+        - Tomate rojo
+        - Tomate verde
+        - Tomillo
+        - Zucchini
+
         Si no encuentras una clase a identificar, responde con "ERROR".
+
+        Responde usando markdown para dar estilo. Si no lo crees necesario, no agregues estilo.
         """
 
         payload = {
@@ -246,6 +274,7 @@ async def query_documents(request: Request):
         docs_and_scores = db.similarity_search_with_score(last_message, k=2)
         print(docs_and_scores)
 
+        # TODO: agente que determina si debe o no buscar documentos?
         context = "\n".join(map(lambda doc: doc[0].page_content, docs_and_scores))
 
         print(context)

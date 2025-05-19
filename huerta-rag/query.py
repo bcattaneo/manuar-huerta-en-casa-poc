@@ -23,7 +23,7 @@ import requests
 import uvicorn
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
@@ -33,7 +33,7 @@ load_dotenv()
 port = int(os.getenv("PORT", 8000))
 
 # Get OpenAI API key from environment variables
-OPENAI_API_KEY = "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"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise ValueError("OPENAI_API_KEY environment variable is not set")
 

@@ -1,0 +1,8 @@
+fastapi>=0.95.0
+uvicorn>=0.21.1
+python-dotenv>=1.0.0
+langchain>=0.0.267
+langchain_openai>=0.0.3
+langchain_chroma>=0.0.1
+chromadb==1.0.9
+requests
